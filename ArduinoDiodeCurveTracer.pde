@@ -21,16 +21,14 @@ const int apinDutCurrent  = A0;
 //         ( RS, Enable, D4, D5, D6, D7 ) ,R/W=Gnd
 LiquidCrystal lcd( 9, 8, 13, 12, 11, 10 );
 
-/* *** serial receive *** */
-int inByte = 0;         // incoming serial byte
-//int buf[10];
-
 /* *** ADC read *** */
 int voltDacOut      = 0;
 int voltDutNegative = 0;
 int voltDutCurrent  = 0;
 
-int dacValue = 0;
+/* *** serial receive *** */
+int inByte = 0;         // incoming serial byte
+int setValue = 0;
 
 const int adcStep = 1024;
 const int dacStep =  256;
@@ -42,7 +40,7 @@ const float maxPc      = 200.0;  // 2SC1815 Pc_max=400[mW]
 float ratio = 0;
 float rc = 0;
 
-float maxDutVoltage = 5.0;
+int maxDutVoltage = 5.0;
 
 void setup() {
 //  analogReference( INTERNAL );
@@ -51,7 +49,7 @@ void setup() {
 
   pinMode(pinReset, OUTPUT); // nReset
   pinMode(pinClock, OUTPUT); // clock
-  pinMode(pinData, OUTPUT); // data
+  pinMode(pinData, OUTPUT);  // data
   pinMode(pinOE, OUTPUT); // nOE
   pinMode(pinLE, OUTPUT); // LE
   
@@ -70,14 +68,45 @@ void setup() {
 }
 
 void loop() {
+  if(Serial.available() > 0) {
+    inByte = Serial.read();
+    if('0' <= inByte && inByte <= '9'){
+      int num = inByte - '0';
+      setValue = setValue * 10 + num;
+    }else if(inByte == 's'){  // sweep
+      Serial.println("sweep");
+      Serial.println(setValue/1000, DEC);
+      sweep(setValue/1000);  
+      setValue = 0;
+    }else if(inByte == 't'){  // single
+      Serial.println("single");
+//      Serial.println(setCurrent/1000, DEC);
+      Serial.println(setValue, DEC);
+      singleMeasure( setValue );
+      getADC();     
+      printRecord();
+      setValue = 0;
+    }else if(inByte == '\n'){
+            
+    }else{    }
+    
+    
+    
+  }
+  
+} // loop
 
+  /*
   if (Serial.available() > 0) {
     // get incoming byte:
     inByte = Serial.read();
     if( '0' <= inByte && inByte <= '9' ){
       int num = inByte - '0';
       dacValue = dacValue * 10 + num;
-    }else if( inByte == '\n' ){
+    }else if( inByte == 's' ){
+      Serial.println("s");
+      sweep(dacValue);
+    }else if( inByte == 't' ){
       if( 0 <= dacValue && dacValue <= 255 ){
         switch( singleMeasure(dacValue) ){
           case VOLTAGE_OVER_RANGE:
@@ -95,54 +124,47 @@ void loop() {
           case SUCCESS: ;
           default: ;
         }
-        
-  
         Serial.print("cnt: ");
         Serial.println(dacValue, DEC);
-        Serial.print("dac: ");
-        Serial.println(voltDacOut, DEC);
-        Serial.print("v  : ");
-        Serial.println(getDutVoltage(), DEC);
-        Serial.print("i  : ");
-        Serial.println(getDutCurrent()*1000, DEC);
-        Serial.print("vce: ");
-        Serial.println(getVce(), DEC);
-        Serial.print("pc : ");
-        Serial.println(getPc()*1000, DEC);      
-/*
-        Serial.print(dacValue, DEC);
-        Serial.print(" ");
-        Serial.print(voltDacOut, DEC);
-        Serial.print(" ");
-        Serial.print(voltDutNegative, DEC);
-        Serial.print(" ");
-        Serial.print(voltDutCurrent, DEC);
-        Serial.println();
-        */
+        printRecord();
+        dacValue = 0;
       }
- 
-      dacValue = 0;
     }
   }
-  
-//  measure();
-
-/*  
-  lcd.setCursor(0, 0);
-  lcd.print(dacValue, DEC);
-  lcd.print(" ");
-  lcd.print(voltDacOut, DEC);
-  lcd.print(" ");
-  lcd.print(voltDutNegative, DEC);
-  lcd.print(" ");
-  lcd.print(voltDutCurrent, DEC);
-*/  
   delay(100);
-
 }
+*/
 
 void sweep( float maMax ){
-  
+  for(int i=0; i<255; i++){
+    singleMeasure(i++);
+    getADC();
+    Serial.print(getDutVoltage(), DEC);
+    Serial.print(", ");
+    Serial.println(getDutCurrent()*1000, DEC);
+    if( maMax <= getDutCurrent()*1000 ){ break; }
+  }
+  dacReset();
+  dacLoadToLatch();
+  Serial.print("done.");
+}
+
+void printRecord(){  
+  Serial.print("dac: ");
+  Serial.println(voltDacOut, DEC);
+  Serial.print("v  : ");
+  Serial.println(getDutVoltage(), DEC);
+  Serial.print("i  : ");
+  Serial.println(getDutCurrent()*1000, DEC);
+  Serial.print("vce: ");
+  Serial.println(getVce(), DEC);
+  Serial.print("pc : ");
+  Serial.println(getPc()*1000, DEC);      
+  Serial.println("---");      
+}
+
+int currentToDacValue(float c){
+  return c/1000 * rc / ratio / vRef * dacStep;
 }
 
 float getDutVoltage(){
